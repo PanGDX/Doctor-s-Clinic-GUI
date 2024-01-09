@@ -1,7 +1,7 @@
 {
-    "host":"clinic-program-sql-clinic-program.a.aivencloud.com",
-    "password":"AVNS_KhKGSffI6s6ZRqt4Lp6",
-    "port":15528,
-    "user":"avnadmin",
-    "db":"Clinic"
+    "host":"FILL IN YOUR DATABASE",
+    "password":"PASSWORD",
+    "port":PORT,
+    "user":"NAME",
+    "db":"DB TO USE"
 }
