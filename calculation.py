@@ -1,26 +1,11 @@
 import openpyxl
 from utility import *
-import math, os, json, sys
+import math, os, sys
 from datetime import datetime
 from tkinter import *
 from tkcalendar import Calendar
+import time
 
-
-# format: "name": [type(0 for helper, 1 for nurse),
-# total wage,
-# number of weekdays worked,
-# number of weekends worked,
-#  hours of weekdays worked,
-# hours of weekends worked]
-
-# Function to add names
-
-# date is standardised AS STRING!!!!
-# 0 for helper
-# 1 for nurse
-# OT is 30 minutes per unit
-# 2 for pat
-# 3 for dew
 
 
 
@@ -29,6 +14,92 @@ from tkcalendar import Calendar
 
 global start_datetime_object, end_datetime_object
 
+
+
+
+
+
+def delete_sheet(file_path, sheet_name):
+    # Load the workbook
+    workbook = openpyxl.load_workbook(file_path)
+
+    # Check if the sheet exists in the workbook
+    if sheet_name in workbook.sheetnames:
+        # Remove the sheet
+        workbook.remove(workbook[sheet_name])
+        print(f"Sheet '{sheet_name}' has been deleted.")
+
+        # Save the workbook
+        workbook.save(file_path)
+        print(f"Changes saved to '{file_path}'.")
+    else:
+        print(f"Sheet '{sheet_name}' does not exist in the workbook.")
+    workbook.close()
+
+
+def save_staff_log_to_excel(sql_connection, excel_file_path):
+    # Connect to the MySQL database
+    if find_file("staff-log.xlsx") != False:
+        os.remove(find_file("staff-log.xlsx"))
+        make_file(os.getcwd(),'staff-log.xlsx',["Date", "Name", "TimeIn", "TimeOut", "Patients"])
+        print("Processing")
+        time.sleep(5)
+
+    with sql_connection.cursor() as cursor:
+        # SQL query to select data from Clinic.StaffLog
+        sql = "SELECT Date,Name,TimeIn,TimeOut,Patients FROM Clinic.StaffLog"
+        cursor.execute(sql)
+
+        # Fetch all rows from the database
+        rows = cursor.fetchall()
+
+        # Create an Excel workbook and sheet
+        
+        workbook = openpyxl.Workbook()
+        sheet = workbook.active
+
+        # Writing the data
+        for row in rows:
+            sheet.append(list(row.values()))
+
+        # Save the workbook to the specified file path
+        workbook.save(excel_file_path)
+        workbook.close()
+
+
+def save_medicine_log_to_excel(sql_connection, excel_file_path):
+    # Connect to the MySQL database
+
+    if find_file("medicine-log.xlsx") != False:
+        os.remove(find_file("medicine-log.xlsx"))
+        create_medicine_sheet(sql_connection)
+        print("Processing")
+        time.sleep(5)
+        
+    # Load the existing Excel workbook
+    workbook = openpyxl.load_workbook(excel_file_path)
+
+    with sql_connection.cursor() as cursor:
+        # SQL query to select data from the Medicine Log
+        sql = "SELECT Date, Name, Quantity FROM MedicineLog"
+        cursor.execute(sql)
+
+        # Fetch all rows from the database
+        rows = cursor.fetchall()
+
+        for row in rows:
+            # Determine the sheet name from the medicine name
+            sheet_name = row['Name']
+
+            # Select the sheet
+            sheet = workbook[sheet_name]
+
+            # Append the Date and Quantity to the sheet
+            sheet.append([row['Date'], row['Quantity']])
+
+        # Save the updated workbook
+        workbook.save(excel_file_path)
+        workbook.close()
 
 
 
@@ -82,10 +153,8 @@ def select_dates():
     root.mainloop()
 
 
-
-
 def merge_function():
-    workbook = openpyxl.load_workbook(filename=f"{os.getcwd()}\\Files\\staff-log.xlsx")
+    workbook = openpyxl.load_workbook(filename=find_file('staff-log.xlsx'))
     sheet = workbook.active
 
     data = []
@@ -94,11 +163,11 @@ def merge_function():
         date, name, clock_in, clock_out, patients = row
         data.append(
             {
-                "date": date,
-                "name": name,
-                "clock_in": clock_in,
-                "clock_out": clock_out,
-                "patients": patients,
+                "Date": date,
+                "Name": name,
+                "Clock In": clock_in,
+                "Clock Out": clock_out,
+                "Patients": patients,
             }
         )
         if clock_out == None or clock_out == "":
@@ -111,134 +180,103 @@ def merge_function():
 
     merged_data = {}
     for row in data:
-        key = (row["date"], row["name"])
+        key = (row["Date"], row["Name"])
         if key not in merged_data:
             merged_data[key] = {
-                "clock_in": row["clock_in"],
-                "clock_out": row["clock_out"],
-                "patients": row["patients"],
+                "Clock In": row["Clock In"],
+                "Clock Out": row["Clock Out"],
+                "Patients": row["Patients"],
             }
         else:
-            merged_data[key]["clock_out"] = row["clock_out"]
-            merged_data[key]["patients"] += row["patients"]
+            merged_data[key]["Clock Out"] = row["Clock Out"]
+            merged_data[key]["Patients"] += row["Patients"]
 
     mergedworkbook = openpyxl.Workbook()
-    mergedworkbook.save(filename="staff-log.xlsx")
+    
 
     mergedworkbook.active.append(
         ["Date", "Name", "Clock In", "Clock Out", "Patients"]
     )  # Header
+
+
     for key, row in merged_data.items():
+        if type(key[0]) == str:
+            date = key[0]
+        else:   
+            date = key[0].strftime("%m/%d/%Y")
+            print(type(key[0]))
+            print(date)
+        #format is d/t/m
+        # but if you type in 3/2/2023 -> usually excel reads as month 3, day 2
+
         mergedworkbook.active.append(
-            [key[0], key[1], row["clock_in"], row["clock_out"], row["patients"]]
+            [date, key[1], row["Clock In"], row["Clock Out"], row["Patients"]]
         )
 
     mergedworkbook.save("staff-log.xlsx")
 
 
+# Main Function for staff-log processing
+def TimeWorked(sql_connection):
+    def WagePerDay(minutes: int, types: str, date: int, patients: int, connection):
+        
 
+        # READ ROLES WAGES FROM SQL
+        cursor = connection.cursor()
+        query = "SELECT * FROM Clinic.RolesPayment"
+        cursor.execute(query)
+        results = cursor.fetchall()
+        cursor.close()
 
-
-# Main Function
-def TimeWorked():
-    def WagePerDay(minutes: int, types: str, date: int, patients: int):
-
-        roles = json_loading("staff-wages.json")
+        roles = {}
+        for key_dict in results:
+            roles[key_dict['Roles']] = {
+                "WeekdayDollar":key_dict["WeekdayDollar"],
+                "WeekendDollar":key_dict["WeekendDollar"],
+                "OvertimeWeekdayDollar":key_dict["OvertimeWeekdayDollar"],
+                "OvertimeWeekendDollar":key_dict["OvertimeWeekendDollar"]
+            }
 
         summation = 0
         summation += 40
         summation += patients
+
+
         if patients >= 30:
             summation += 50
 
         if date < 6:  # weekdays
             time_remaining = max(minutes - 3 * 60, 0) / 30
 
-            summation += roles[types]["weekday pay"]
-            summation += roles[types]["overtime pay"] * math.floor(time_remaining)
+            summation += roles[types]["WeekdayDollar"]
+            summation += (roles[types]["OvertimeWeekdayDollar"] * math.floor(time_remaining))
 
         if date >= 6:  # weekends
             time_remaining = max(minutes - 4 * 60, 0) / 30
 
-            summation += roles[types]["weekend pay"]
-            summation += roles[types]["overtime pay"] * math.floor(time_remaining)
+            summation += roles[types]["WeekendDollar"]
+            summation += (roles[types]["OvertimeWeekendDollary"] * math.floor(time_remaining))
 
         return summation
+
     dictionary_of_names_details = {}
 
-    workbook = openpyxl.load_workbook(filename=find_file('staff-log.xlsx'))
+    workbook = openpyxl.load_workbook(filename=find_file("staff-log.xlsx"))
 
-    choice_of_loading = "no"
-    previous_settings_path = find_file("staff-roles.json")
     
-       
-    if previous_settings_path:
-        choice_of_loading = str(
-            input(
-                "Do you want to load the settings from the previous session? Type y for yes, n for no\n"
-            )
-        ).lower()
-    else:
-        os.remove(previous_settings_path)
-        make_file(f"{os.getcwd()}\\Files", "staff-roles.json")
-        previous_settings_path = f"{os.getcwd()}\\Files\\staff-roles.json"
+    # READ ROLES FROM SQL
+    list_of_staff_roles = query_staff_roles(sql_connection)
+    for key_dict in list_of_staff_roles:
+        dictionary_of_names_details[key_dict['Name']] = [key_dict['Role'], 0, 0, 0, 0, 0]
 
 
-
-    names_list_for_setting_storage = {}
-    if choice_of_loading.lower() == "y":
-        names_list_for_setting_storage = json_loading("staff-roles.json")
-
-        for key, value in names_list_for_setting_storage.items():
-            if value == "helper" or value == "nurse":
-                print(f"{key} is a {value}")
-            else:
-                print(f"{key} is a special nurse/helper ({value})")
-
-        if input("Are these settings correct? (y/n):").lower() == "n":
-            names_list_for_setting_storage = {}
-            print("Deleted")
-            os.remove(previous_settings_path)
-        else: 
-            for key, value in names_list_for_setting_storage.items():
-                dictionary_of_names_details[key] = [value, 0, 0, 0, 0, 0]
-
-    for i, row in enumerate(
-        workbook.active.iter_rows(min_row=2, values_only=True), start=2
-    ):
-        if row[1] not in dictionary_of_names_details:
-            typeinput = int(
-                input(
-                    f"{row[1]} has a role of a: Input 0 for helper. 1 for nurse. 2 for Pat. 3 for Dew: "
-                )
-            )
-            type_string = ""
-            if typeinput == 0:
-                type_string = "helper"
-            elif typeinput == 1:
-                type_string = "nurse"
-            elif typeinput == 2:
-                type_string = "Pat"
-            elif typeinput == 3:
-                type_string = "Dew"
-            else:
-                print("Invalid input")
-                sys.exit()
-            dictionary_of_names_details[row[1]] = [type_string, 0, 0, 0, 0, 0]
-            names_list_for_setting_storage[row[1]] = type_string
-
-    out_json_file = open(f"{previous_settings_path}", "w")
-    json.dump(names_list_for_setting_storage, out_json_file, indent=4)
-    out_json_file.close()
 
     input("Input anything to continue")
     os.system("cls")
 
     print("Select the date range to include in the calculation")
     select_dates()
-    for i, row in enumerate(
-        workbook.active.iter_rows(min_row=2, values_only=True), start=2
-    ):
+    for i, row in enumerate(workbook.active.iter_rows(min_row=2, values_only=True), start=2):
         date = row[0]
         try:
             datetime_object = datetime.strptime(date, "%d/%m/%Y")
@@ -252,37 +290,39 @@ def TimeWorked():
         refer_date = None
         patients = 0
         paid = 0
-        if (
-            start_datetime_object <= datetime_object
-            and datetime_object <= end_datetime_object
-        ):
+        if (start_datetime_object <= datetime_object and datetime_object <= end_datetime_object):
             minutes = time_difference(row[2], row[3])
-            refer_date = (
-                datetime_object.weekday() + 1
-            )  # 1 for monday, 7 for sunday, etc
-            # check if this is true
+            refer_date = (datetime_object.weekday() + 1)  
+            # 1 for monday, 7 for sunday, etc
+            
 
             patients = int(row[4])
 
-            paid = WagePerDay(minutes, dictionary_of_names_details[row[1]][0], refer_date, patients)
+            paid = WagePerDay(
+                minutes, dictionary_of_names_details[row[1]][0], refer_date, patients, sql_connection
+            )
 
-        dictionary_of_names_details[row[1]][1] += paid
+        
         if refer_date != None:
+            dictionary_of_names_details[row[1]][1] += paid
+            
             if refer_date < 6:
                 dictionary_of_names_details[row[1]][2] += 1
                 dictionary_of_names_details[row[1]][4] += round(minutes / 60.0, 2)
             if refer_date >= 6:
                 dictionary_of_names_details[row[1]][3] += 1
                 dictionary_of_names_details[row[1]][5] += round(minutes / 60.0, 2)
+        else:
+            print("Some error somewhere??")
 
     for x, y in dictionary_of_names_details.items():
         if y[1] != 0:
-            if y[0] == "helper":
+            if y[0] == "Helper":
                 print(
                     f"{x} (helper) should be paid {y[1]} baht.\nThey worked for {y[3]} weekends for {y[5]} hours.\nThey worked for {y[2]} weekdays for {y[4]} hours\n\n"
                 )
 
-            elif y[0] == "nurse":
+            elif y[0] == "Nurse":
                 print(
                     f"{x} (nurse) should be paid {y[1]} baht.\nThey worked for {y[3]} weekends for {y[5]} hours.\nThey worked for {y[2]} weekdays for {y[4]} hours\n\n"
                 )
@@ -294,28 +334,125 @@ def TimeWorked():
     input("Input anything to continue")
     sys.exit()
 
-def MedicineLog():
-    return True
+def MedicineCalculation(sql_connection):
+    delete_sheet(find_file('medicine-log.xlsx'), 'Sheet')
+    """
+    - read the xlsx data
+    - get the information on price from sql
+    - collate and calculate into a dictionary. Formatted:
+    {"Name": {
+        "Leftover":
+        "Used":
+        }
+    }
 
+    and then we can use information from sql to calculate
+    """
+    final_data = {}
+    total_revenue = 0
+    total_profit = 0
+    total_cost = 0
+
+    
+    workbook = openpyxl.load_workbook(filename=find_file('medicine-log.xlsx'))
+    select_dates()
+    for sheet in workbook.sheetnames:
+        current_sheet = workbook[sheet]
+        
+
+        final_data[sheet] = {"Leftover":0, 
+                             "Used":0}
+    
+        for i, row in enumerate(current_sheet.iter_rows(min_row=2, values_only=True), start=2):
+            date = row[0]
+            try:
+                datetime_object = datetime.strptime(date, "%d/%m/%Y")
+                # print(date)
+            except:
+                date_now = f"{date.month}/{date.day}/{date.year}"
+                # print(date_now)
+                datetime_object = datetime.strptime(date_now, "%d/%m/%Y")
+            quantity = int(row[1])
+
+            if (start_datetime_object <= datetime_object and datetime_object <= end_datetime_object):
+                if quantity < 0:
+                    final_data[sheet]["Used"] = final_data[sheet]["Used"] + abs(quantity)
+                
+                final_data[sheet]["Leftover"] = final_data[sheet]["Leftover"] + quantity
+
+    cursor = sql_connection.cursor()
+    query = "SELECT * FROM Clinic.MedicineTreatmentPrices"
+    cursor.execute(query)
+    result = cursor.fetchall()
+    cursor.close()
+
+    medicine_data_in_dict = {}
+    for key_dict in result:
+        medicine_data_in_dict[key_dict['Name']] = {
+            "Price":key_dict["Price"],
+            "CostPrice":key_dict['CostPrice']
+        }
+
+    for name in final_data:
+        leftover_quantity = final_data[name]["Leftover"]
+        used_quantity = final_data[name]["Used"]
+        revenue_per_unit = medicine_data_in_dict[name]["Price"]
+        cost_per_unit = medicine_data_in_dict[name]["CostPrice"]
+        profit_per_unit = revenue_per_unit - cost_per_unit
+
+        print(f"For {name}:")
+        print(f"Stock leftover: {leftover_quantity}")
+        print(f"Used: {used_quantity}")
+        print(f"Revenue: {used_quantity * revenue_per_unit}")
+        print(f"Profit: {used_quantity * profit_per_unit}")
+        print(f"Cost spent: {used_quantity * cost_per_unit}")
+
+
+        total_revenue += (used_quantity * revenue_per_unit)
+        total_profit += (used_quantity * profit_per_unit)
+        total_cost += (used_quantity * cost_per_unit)
+
+    print("\n\n\n")
+    print(f"Total revenue: {total_revenue}")
+    print(f"Total cost: {total_cost}")
+    print(f"Total profit: {total_profit}")
 
 if __name__ == "__main__":
-    staff_log_location = find_file("staff-log.xlsx")
-    if staff_log_location:
-        remove_blank_rows(staff_log_location)
-    else:
-        print("staff-log.xlsx does not exist")
-        input("Input anything to exit.")
-        sys.exit()
-    print("Run Merging...")
-    merge_function()
+    """
+    How this program works:
+    - Checks for 2 xlsx files - staff-log and medicine-log (DONE)
+    - Creates them if they do not exist (function written) (DONE)
+    - Pulls data from sql to xlsx files (modify and check) (OPTION GIVEN)
+    - Merge the data for the staff-log. For the medicine-log, no need to do so.
 
-    choice = int(input("Calculating staff wages or medicine/treatment data?\n1:Staff\n2:Medicine/treatment\n:"))
-    if(choice == 1):
-        TimeWorked()
-    elif(choice == 2):
-        MedicineLog()
-    else:
-        print("Invalid choice")
-        sys.exit()
+    - Select options: 
+        - View staff-log
+            - Gives data. Already written
+        - View medicine-log 
+            - What data to calculate?
+            - differentiate between + and -
+            - how many used
+            - profit, revenue, cost (from usage)
+            - stock leftover (first input will be +, starting amount)
 
+    """
+    sql_connection = return_connection()
+
+
+    
+    option = int(input("Input 1: Load excel data from database. Will delete the file! Warning!\nInput 2: Skip this step, use existing excel data\n:"))
+    if option == 1:
+        # load data
+        save_staff_log_to_excel(sql_connection,find_file('staff-log.xlsx'))
+        save_medicine_log_to_excel(sql_connection, find_file('medicine-log.xlsx'))
+
+    option = int(input("Input 1: Calculate data for staff\nInput 2: Calculate data for medicine\n:"))
+    if option == 1:
+        merge_function()
+        # merge staff-log
+        # run calculations
+        TimeWorked(sql_connection)
+    if option == 2:
+        # process medicine-data
+        MedicineCalculation(sql_connection)
 
